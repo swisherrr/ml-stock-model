@@ -70,6 +70,25 @@ The processed data (with all indicators calculated) is automatically cached in a
 
 ### Making Predictions
 
+**Predict for All Stocks (Daily Predictions):**
+
+```bash
+python predict_all.py
+```
+
+This script will:
+- Automatically find the most recent trained model
+- Load cached data for all stocks (fast!)
+- Generate predictions for all stocks using current day's data
+- Display results sorted by probability of going UP
+
+Options:
+- `python predict_all.py` - Uses most recent model and cache (default)
+- `python predict_all.py --model <path>` - Use a specific model file
+- `python predict_all.py --no-cache` - Fetch fresh data instead of using cache
+
+**Predict for Specific Stocks:**
+
 ```bash
 python predict.py <model_path> <symbol1> [symbol2] ...
 ```
@@ -128,7 +147,8 @@ ML/
 ├── __init__.py
 ├── README.md
 ├── main.py                 # Main training script
-├── predict.py              # Prediction script
+├── predict.py              # Prediction script (specific stocks)
+├── predict_all.py          # Daily predictions for all stocks
 ├── data_fetcher.py         # Data fetching and indicator calculation
 ├── data_cache.py           # Data caching module (SQLite)
 ├── feature_engineering.py  # Feature normalization

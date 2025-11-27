@@ -12,6 +12,8 @@ from data_fetcher import fetch_and_prepare_data
 from label_generation import prepare_ml_data
 from model_trainer import train_and_evaluate
 from data_cache import DataCache
+import pandas as pd
+import numpy as np
 
 
 def get_ticker_list():
@@ -86,7 +88,7 @@ def main(force_refresh=False):
     
     # Prepare ML data with features and labels
     print("\n3. Preparing ML features and labels...")
-    X, y, feature_names = prepare_ml_data(all_data, days_ahead=5)
+    X, y, feature_names, metadata = prepare_ml_data(all_data, days_ahead=5)
     
     if len(X) == 0:
         print("Error: No valid samples after feature preparation. Exiting.")
@@ -105,7 +107,8 @@ def main(force_refresh=False):
         learning_rate=0.05,
         random_state=42,
         save_model=True,
-        model_dir='models'
+        model_dir='models',
+        metadata=metadata  # Pass metadata for per-stock predictions
     )
     
     # Print final summary
@@ -127,6 +130,39 @@ def main(force_refresh=False):
     print(f"  Recall: {test['recall']:.4f}")
     print(f"  F1-Score: {test['f1_score']:.4f}")
     print(f"  ROC-AUC: {test['roc_auc']:.4f}")
+    
+    # Display per-stock predictions
+    if 'per_stock_predictions' in results and results['per_stock_predictions'] is not None:
+        print("\n" + "=" * 80)
+        print("INDIVIDUAL STOCK PREDICTIONS")
+        print("=" * 80)
+        print("Probability that each stock will go UP in 5 days:")
+        print("-" * 80)
+        
+        predictions_df = results['per_stock_predictions']
+        
+        # Format the output nicely
+        print(f"{'Stock':<10} {'Date':<12} {'Close Price':<15} {'Prob. UP':<12} {'Prediction':<10}")
+        print("-" * 80)
+        
+        for _, row in predictions_df.iterrows():
+            ticker = str(row['ticker'])
+            if pd.notna(row['date']):
+                try:
+                    date = pd.to_datetime(row['date']).strftime('%Y-%m-%d')
+                except:
+                    date = str(row['date'])[:10]  # Take first 10 chars if parsing fails
+            else:
+                date = 'N/A'
+            
+            close = f"${row['close_price']:.2f}" if pd.notna(row['close_price']) else 'N/A'
+            prob = float(row['probability_up'])
+            pred = "UP" if int(row['prediction']) == 1 else "DOWN"
+            
+            print(f"{ticker:<10} {date:<12} {close:<15} {prob:.2%}      {pred:<10}")
+        
+        print("-" * 80)
+        print(f"\nTotal stocks with predictions: {len(predictions_df)}")
     
     print("\n" + "=" * 80)
     print("Model training complete!")

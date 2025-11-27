@@ -81,7 +81,8 @@ def prepare_ml_data(all_data_dict, days_ahead=5):
         days_ahead: Number of days ahead to predict (default: 5)
     
     Returns:
-        Tuple of (features_df, labels_series, feature_columns)
+        Tuple of (features_df, labels_series, feature_columns, metadata_df)
+        where metadata_df contains ticker, date, and close_price for tracking
     """
     import feature_engineering
     combine_all_features = feature_engineering.combine_all_features
@@ -99,6 +100,10 @@ def prepare_ml_data(all_data_dict, days_ahead=5):
     print("Aligning features and labels...")
     features_df, aligned_labels = align_features_and_labels(combined_df, labels)
     
+    # Extract metadata (ticker, date, close_price) before selecting only features
+    metadata_cols = ['ticker', 'date', 'close_price']
+    metadata = features_df[metadata_cols].copy() if all(col in features_df.columns for col in metadata_cols) else None
+    
     # Get feature columns (excluding metadata)
     feature_cols = get_feature_columns(features_df)
     
@@ -110,8 +115,21 @@ def prepare_ml_data(all_data_dict, days_ahead=5):
     ml_features = ml_features[valid_mask]
     aligned_labels = aligned_labels[valid_mask]
     
+    # Apply same mask to metadata - keep the same index as ml_features
+    if metadata is not None:
+        metadata = metadata.loc[valid_mask].copy()
+        # Reset index to match ml_features index (0, 1, 2, ...)
+        metadata = metadata.reset_index(drop=True)
+    
+    # Reset indices for alignment
+    ml_features = ml_features.reset_index(drop=True)
+    if isinstance(aligned_labels, pd.Series):
+        aligned_labels = aligned_labels.reset_index(drop=True)
+    else:
+        aligned_labels = pd.Series(aligned_labels.values)
+    
     print(f"Final dataset: {len(ml_features)} samples, {len(feature_cols)} features")
     print(f"Label distribution: {aligned_labels.value_counts().to_dict()}")
     
-    return ml_features, aligned_labels, feature_cols
+    return ml_features, aligned_labels, feature_cols, metadata
 

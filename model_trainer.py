@@ -245,9 +245,52 @@ def cross_validate(X, y, n_splits=5, n_estimators=100, max_depth=6,
     return cv_results
 
 
+def generate_per_stock_predictions(model, X_test, y_test, metadata):
+    """
+    Generate predictions grouped by stock
+    
+    Args:
+        model: Trained model
+        X_test: Test features
+        y_test: Test labels
+        metadata: DataFrame with ticker, date, close_price for each sample
+    
+    Returns:
+        DataFrame with per-stock predictions (latest prediction for each stock)
+    """
+    if metadata is None or 'ticker' not in metadata.columns:
+        return None
+    
+    # Reset index for alignment
+    X_test_reset = X_test.reset_index(drop=True)
+    y_test_reset = y_test.reset_index(drop=True) if hasattr(y_test, 'reset_index') else pd.Series(y_test.values)
+    metadata_reset = metadata.reset_index(drop=True) if metadata is not None else None
+    
+    # Make predictions
+    probabilities = model.predict_proba(X_test_reset)[:, 1]
+    predictions = model.predict(X_test_reset)
+    
+    # Create results DataFrame
+    results_df = pd.DataFrame({
+        'ticker': metadata_reset['ticker'] if metadata_reset is not None else None,
+        'date': metadata_reset['date'] if metadata_reset is not None else None,
+        'close_price': metadata_reset['close_price'] if metadata_reset is not None else None,
+        'probability_up': probabilities,
+        'prediction': predictions,
+        'actual': y_test_reset.values if hasattr(y_test_reset, 'values') else y_test_reset
+    })
+    
+    # Group by ticker and get the latest prediction for each stock
+    latest_predictions = results_df.sort_values('date').groupby('ticker').last().reset_index()
+    latest_predictions = latest_predictions[['ticker', 'date', 'close_price', 'probability_up', 'prediction']]
+    latest_predictions = latest_predictions.sort_values('probability_up', ascending=False)
+    
+    return latest_predictions
+
+
 def train_and_evaluate(X, y, feature_names, test_size=0.2, n_splits=5,
                        n_estimators=100, max_depth=6, learning_rate=0.1,
-                       random_state=42, save_model=True, model_dir='models'):
+                       random_state=42, save_model=True, model_dir='models', metadata=None):
     """
     Complete training and evaluation pipeline
     
@@ -263,9 +306,10 @@ def train_and_evaluate(X, y, feature_names, test_size=0.2, n_splits=5,
         random_state: Random seed
         save_model: Whether to save the trained model
         model_dir: Directory to save model
+        metadata: DataFrame with ticker, date, close_price for tracking individual stocks
     
     Returns:
-        Trained model and evaluation results
+        Trained model and evaluation results (including per-stock predictions if metadata provided)
     """
     print(f"\n{'='*60}")
     print("Training XGBoost Model")
@@ -278,10 +322,15 @@ def train_and_evaluate(X, y, feature_names, test_size=0.2, n_splits=5,
     _, (train_idx, test_idx) = time_series_split(X, y, n_splits=n_splits, 
                                                   test_size=test_size)
     
-    X_train = X.iloc[train_idx]
-    y_train = y.iloc[train_idx]
-    X_test = X.iloc[test_idx]
-    y_test = y.iloc[test_idx]
+    X_train = X.iloc[train_idx].reset_index(drop=True)
+    y_train = pd.Series(y.iloc[train_idx].values) if isinstance(y, pd.Series) else pd.Series(y.iloc[train_idx])
+    X_test = X.iloc[test_idx].reset_index(drop=True)
+    y_test = pd.Series(y.iloc[test_idx].values) if isinstance(y, pd.Series) else pd.Series(y.iloc[test_idx])
+    
+    # Split metadata if provided - ensure same length as test set
+    metadata_test = None
+    if metadata is not None and len(metadata) == len(X):
+        metadata_test = metadata.iloc[test_idx].copy().reset_index(drop=True)
     
     print(f"\nTrain set: {len(X_train)} samples")
     print(f"Test set: {len(X_test)} samples")
@@ -310,6 +359,11 @@ def train_and_evaluate(X, y, feature_names, test_size=0.2, n_splits=5,
     print("Final Test Set Evaluation")
     print(f"{'='*60}")
     test_metrics = evaluate_model(final_model, X_test, y_test, set_name="Test")
+    
+    # Generate per-stock predictions if metadata is available
+    per_stock_predictions = None
+    if metadata_test is not None:
+        per_stock_predictions = generate_per_stock_predictions(final_model, X_test, y_test, metadata_test)
     
     # Feature importance
     print(f"\n{'='*60}")
@@ -342,6 +396,7 @@ def train_and_evaluate(X, y, feature_names, test_size=0.2, n_splits=5,
     return final_model, {
         'cv_results': cv_results,
         'test_metrics': test_metrics,
-        'feature_importance': feature_importance
+        'feature_importance': feature_importance,
+        'per_stock_predictions': per_stock_predictions
     }
 
